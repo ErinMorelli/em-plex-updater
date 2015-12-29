@@ -1,0 +1,39 @@
+# EM Plex Updater Configuration
+# Change the settings below to reflect your PMS instance
+# Rename & place this file in ~/.config/plex/config.yml
+
+# Your Plex Media Server's unique client ID
+# 1 - Log in to app.plex.tv/web/app
+# 2 - Navigate to Settings -> Server
+# 3 - Look at the browser's URL, it will look something like this:
+#     https://app.plex.tv/web/app#!/settings/server/ZdvOD8932rsJQzytoF1hZB1gvLXm2o8VUpaiE3Wx/general
+#     The long set of numbers and letters after "server" is your client ID
+client: ZdvOD8932rsJQzytoF1hZB1gvLXm2o8VUpaiE3Wx
+
+# Your Plex.tv account's user name and password
+username: joe_smith
+password: OhNJ45BzDUhPqZ
+
+# Use Plex Pass downloads feed instead of the public one
+# Your user account must have active Plex Pass access
+# Options: on, off
+plex_pass: off
+
+# By default only user accounts with ownership privileges for
+# a server can download and install updates for it. By disabling
+# this option, any user account with access to the server can
+# download and install updates.
+# It IS NOT recommended to disable this - use with caution!
+# Options: on, off
+owners_only: on
+
+# Which Linux distribution package to download
+# Available options: Ubuntu, Fedora, CentOS
+linux_system: Ubuntu
+
+# Which Linux kernel package to download (in Bits)
+# Available options: 32, 64
+linux_version: 32
+
+# Where EM Plex Updater should download new version files to
+folder: /home/username/downloads

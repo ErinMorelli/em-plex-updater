@@ -16,8 +16,11 @@
 ''' A python-based updater for Plex Media Server
 '''
 
+from __future__ import print_function
+
 import re
 import os
+import sys
 import time
 import yaml
 import urllib
@@ -33,6 +36,8 @@ import mediahandler.util.notify as mhnotify
 # Script global constants
 API_ROOT_URL = 'https://plex.tv/{0}'
 DPKG_EXECUTABLE = '/usr/bin/dpkg'
+RPM_EXECUTABLE = '/bin/rpm'
+VALID_SYSTEMS = ['Ubuntu', 'Fedora', 'CentOS']
 CONFIG_FILE = os.path.join(
     os.path.expanduser('~'), '.config', 'plex', 'config.yml')
 
@@ -72,10 +77,27 @@ def get_config():
     '''
 
     # Read yaml config file
-    config = open(CONFIG_FILE).read()
+    config_raw = open(CONFIG_FILE).read()
 
-    # Return decoded config info
-    return yaml.load(config)
+    # Decode yaml
+    config = yaml.load(config_raw)
+
+    # Check for valid systme value
+    if config['linux_system'] not in VALID_SYSTEMS:
+        msg = "Value for 'linux_system' must be one of: {0}"
+        sys.exit(msg.format(', '.join(VALID_SYSTEMS)))
+
+    # Check for valid version value
+    if config['linux_version'] not in [32, 64]:
+        sys.exit("Value for 'linux_version' must be one of: 32, 64")
+
+    # Check for valid download folder
+    if not os.path.exists(config['folder']):
+        msg = "Path to 'folder' does not exist: {0}"
+        sys.exit(msg.format(config['folder']))
+
+    # Return config info
+    return config
 
 
 def get_token(config):
@@ -95,11 +117,43 @@ def get_token(config):
         auth=(config['username'], config['password'])
     )
 
+    # Get XML reponse
+    sign_in_xml = ET.fromstring(sign_in_resp.content)
+
+    def disable_plex_pass(config):
+        ''' Disables use of the Plex Pass download feed
+            and notifies the user.
+        '''
+
+        # Update config object to disable Plex Pass features
+        config['plex_pass'] = False
+
+        # Notify the user via CLI of the change
+        print('The user account provided does not have a ' +
+              'valid Plex Pass subscription, using the ' +
+              'Public downloads feed for updates.', file=sys.stderr)
+
+    # Check that user has Plex Pass access if they've enabled it
+    if config['plex_pass']:
+        subscription = sign_in_xml.find('subscription')
+
+        # If the user has no subscription at all, disable
+        if subscription is None:
+            disable_plex_pass(config)
+
+        # If the user's subscription is not active, disable
+        elif subscription.get('active') == '0':
+            disable_plex_pass(config)
+
+        # If the user's subscription does not include 'pass', disable
+        elif subscription.find('feature[@id="pass"]') is None:
+            disable_plex_pass(config)
+
     # Return token from XML response
-    return ET.fromstring(sign_in_resp.content).get('authenticationToken')
+    return sign_in_xml.get('authenticationToken')
 
 
-def get_server_info(token):
+def get_server_info(token, config, args):
     ''' Get current server version
     '''
 
@@ -117,6 +171,19 @@ def get_server_info(token):
     # Decode returned XML data
     server_xml = ET.fromstring(server_resp.content)[0]
 
+    # Make sure user is server owner
+    if server_xml.get('owned') == '0' and config['owners_only']:
+        msg = ('The user account provided does not have ownership ' +
+               'permissions and cannot install updates for this server.')
+
+        # If we are not installing, just notify
+        if args.skip_install or args.check_only:
+            print(msg, file=sys.stderr)
+
+        # Otherwise, bail here
+        else:
+            sys.exit(msg)
+
     # Return server Plex version info
     return {
         'updated': int(server_xml.get('updatedAt')),
@@ -124,19 +191,24 @@ def get_server_info(token):
     }
 
 
-def get_download_info(token):
+def get_download_info(token, config):
     ''' Get current Plex version
     '''
 
     # Set up API downloads URI
     downloads_url = API_ROOT_URL.format('downloads')
 
+    # Set up download params
+    download_params = {}
+
+    # Set up Plex Pass feed, if active
+    if config['plex_pass']:
+        download_params['channel'] = 'plexpass'
+
     # Make API get request to downloads page
     downloads_resp = requests.get(
         downloads_url,
-        params={
-            'channel': 'plexpass'
-        },
+        params=download_params,
         headers={
             'X-Plex-Token': token
         }
@@ -146,10 +218,18 @@ def get_download_info(token):
     downloads_xml = html.fromstring(
         downloads_resp.content).xpath('//ul[@class="os"]/li')
 
+    # Set up Linux system search string
+    system_search = 'span[@class="linux {0}"]'.format(
+        config['linux_system'].lower())
+
+    # Set up Linux version search string
+    version_search = 'div/a[@data-event-label="{0}{1}"]'.format(
+        config['linux_system'], config['linux_version'])
+
     # Iterate over HTML content to extract needed info
     for download in downloads_xml:
         # We only care about the Ubuntu Linux version
-        if download.find('span[@class="linux ubuntu"]') is not None:
+        if download.find(system_search) is not None:
 
             # Extract info from this section
             download_info = download.find('p[@class="sm"]').text_content()
@@ -165,8 +245,7 @@ def get_download_info(token):
                 time.strptime(download_updated_raw, "%b %d, %Y"))
 
             # Extract file download link from content
-            download_link = download.find(
-                'div/a[@data-event-label="Ubuntu64"]').get('href')
+            download_link = download.find(version_search).get('href')
 
             # Return available Plex download info
             return {
@@ -227,9 +306,20 @@ def install_update(download, config, args):
 
     # Make sure the file exists
     if os.path.exists(download_path):
-        # Install it with dpkg
-        if not args.skip_install:
-            subprocess.check_output([DPKG_EXECUTABLE, '-i', download_path])
+
+        # Make sure we're not just downloading
+        if args.skip_install:
+
+            # Install on Ubuntu with dpkg
+            if config['linux_system'] == 'Ubuntu':
+                subprocess.check_output(
+                    [DPKG_EXECUTABLE, '-i', download_path])
+
+            # Install on Fedora or CentOS with rpm
+            else:
+                subprocess.check_output(
+                    [RPM_EXECUTABLE, '-Uhv', download_path])
+
         return True
 
     return False
@@ -259,28 +349,28 @@ def main():
     ''' Main wrapper function to run script
     '''
 
-    # Start program
-    print time.ctime()
-
     # Get CLI args
     args = get_args()
 
     # Get config file info
     config = get_config()
 
+    # Start program
+    print('Checking for updates @', time.ctime(), file=sys.stdout)
+
     # Get token
     token = get_token(config)
 
     # Get server info
-    server = get_server_info(token)
-    print 'Server Version: {0}'.format(server['version'])
+    server = get_server_info(token, config, args)
+    print('Server Version:', server['version'], file=sys.stdout)
 
     # Get download info
-    download = get_download_info(token)
+    download = get_download_info(token, config)
 
     # Check for new version
     if has_newer_version(server, download):
-        print 'New version available: {0}'.format(download['version'])
+        print('New version available:', download['version'], file=sys.stdout)
 
         if not args.check_only:
             success = install_update(download, config, args)
@@ -295,9 +385,9 @@ def main():
                 msg = 'There was an problem downloading the new Plex version.'
 
             send_notification(msg, not success)
-            print msg
+            print(msg, file=sys.stdout)
     else:
-        print 'Plex is up-to-date!'
+        print('Plex is up-to-date!', file=sys.stdout)
 
 
 if __name__ == '__main__':
