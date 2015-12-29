@@ -11,29 +11,29 @@
 client: ZdvOD8932rsJQzytoF1hZB1gvLXm2o8VUpaiE3Wx
 
 # Your Plex.tv account's user name and password
+#    If you encounter any errors related to these fields,
+#    try wrapping them in quotes, e.g. "joe_smith"
 username: joe_smith
 password: OhNJ45BzDUhPqZ
 
-# Use Plex Pass downloads feed instead of the public one
-# Your user account must have active Plex Pass access
+# Use Plex Pass downloads feed instead of the public one.
+#   Your user account must have an active Plex Pass subscription
+#   in order to use this feature.
 # Options: on, off
 plex_pass: off
 
-# By default only user accounts with ownership privileges for
-# a server can download and install updates for it. By disabling
-# this option, any user account with access to the server can
-# download and install updates.
-# It IS NOT recommended to disable this - use with caution!
-# Options: on, off
-owners_only: on
-
-# Which Linux distribution package to download
+# Specify which Linux distribution packages to download
 # Available options: Ubuntu, Fedora, CentOS
 linux_system: Ubuntu
 
-# Which Linux kernel package to download (in Bits)
+# Specify which Linux kernel packages to download (in Bits)
 # Available options: 32, 64
 linux_version: 32
 
-# Where EM Plex Updater should download new version files to
+# Specify where EM Plex Updater should save downloaded package files
 folder: /home/username/downloads
+
+# Specify if EM Plex Update should remove the downloaded package file
+#    after it has succesfully completed installing it.
+# Options: on, off
+remove_completed: off

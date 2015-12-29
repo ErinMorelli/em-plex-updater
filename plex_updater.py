@@ -29,8 +29,6 @@ import requests
 import subprocess
 from lxml import html
 import xml.etree.ElementTree as ET
-import mediahandler.util.config as mhconfig
-import mediahandler.util.notify as mhnotify
 
 
 # Script global constants
@@ -129,8 +127,8 @@ def get_token(config):
         config['plex_pass'] = False
 
         # Notify the user via CLI of the change
-        print('The user account provided does not have a ' +
-              'valid Plex Pass subscription, using the ' +
+        print('WARNING: The account provided does not have a ' +
+              'valid Plex Pass subscription!\n\t Switching to use the ' +
               'Public downloads feed for updates.', file=sys.stderr)
 
     # Check that user has Plex Pass access if they've enabled it
@@ -153,7 +151,7 @@ def get_token(config):
     return sign_in_xml.get('authenticationToken')
 
 
-def get_server_info(token, config, args):
+def get_server_info(token, args):
     ''' Get current server version
     '''
 
@@ -172,17 +170,13 @@ def get_server_info(token, config, args):
     server_xml = ET.fromstring(server_resp.content)[0]
 
     # Make sure user is server owner
-    if server_xml.get('owned') == '0' and config['owners_only']:
-        msg = ('The user account provided does not have ownership ' +
-               'permissions and cannot install updates for this server.')
+    if server_xml.get('owned') == '0':
+        print('WARNING: The account provided does not have ownership ' +
+              'permissions for this server!\n\t Updates can only ' +
+              'be downloaded, not installed.', file=sys.stderr)
 
-        # If we are not installing, just notify
-        if args.skip_install or args.check_only:
-            print(msg, file=sys.stderr)
-
-        # Otherwise, bail here
-        else:
-            sys.exit(msg)
+        # Enable 'skip_install'
+        args.skip_install = True
 
     # Return server Plex version info
     return {
@@ -288,61 +282,52 @@ def has_newer_version(server, download):
     return compare_versions(s_version, d_version)
 
 
-def install_update(download, config, args):
-    ''' Download and install new version of Plex
+def download_update(download, config):
+    ''' Download and new Plex package
     '''
 
-    # Set up download name and path
+    # Set up download name and target path
     download_name = 'pms_{0}.deb'.format(download['version'])
-    download_path = os.path.join(config['folder'], download_name)
+    download_target = os.path.join(config['folder'], download_name)
 
     # If we've already downloaded this file, remove it
-    if os.path.exists(download_path):
-        os.remove(download_path)
+    if os.path.exists(download_target):
+        os.remove(download_target)
 
     # Download the file
     downloader = urllib.URLopener()
-    downloader.retrieve(download['link'], download_path)
+    download_path = downloader.retrieve(download['link'], download_target)
 
     # Make sure the file exists
-    if os.path.exists(download_path):
-
-        # Make sure we're not just downloading
-        if args.skip_install:
-
-            # Install on Ubuntu with dpkg
-            if config['linux_system'] == 'Ubuntu':
-                subprocess.check_output(
-                    [DPKG_EXECUTABLE, '-i', download_path])
-
-            # Install on Fedora or CentOS with rpm
-            else:
-                subprocess.check_output(
-                    [RPM_EXECUTABLE, '-Uhv', download_path])
-
-        return True
-
-    return False
+    return os.path.exists(download_path[0]), download_path[0]
 
 
-def send_notification(message, error=False):
-    ''' Send pushover notification
+def install_update(package, config):
+    ''' Installs the new Plex package
     '''
 
-    # Setup push notification using EM Media Handler notification settings
-    config_path = mhconfig.make_config(None)
-    settings = mhconfig.parse_config(config_path)
-    push = mhnotify.MHPush(settings['Notifications'])
+    try:
+        # Install on Ubuntu with dpkg
+        if config['linux_system'] == 'Ubuntu':
+            subprocess.check_output(
+                [DPKG_EXECUTABLE, '-i', package], shell=True)
 
-    # Set success message
-    msg_title = 'Plex Updated'
+        # Install on Fedora or CentOS with rpm
+        else:
+            subprocess.check_output(
+                [RPM_EXECUTABLE, '-Uhv', package], shell=True)
 
-    # Set error message
-    if error:
-        msg_title = 'Error Updating Plex'
+    # Check for a failed install
+    except subprocess.CalledProcessError:
+        return False
 
-    # Send message
-    push.send_message(message, msg_title)
+    else:
+        # Remove the downloaded file, if enabled
+        if config['remove_completed']:
+            os.remove(package)
+
+        # Return successful
+        return True
 
 
 def main():
@@ -362,7 +347,7 @@ def main():
     token = get_token(config)
 
     # Get server info
-    server = get_server_info(token, config, args)
+    server = get_server_info(token, args)
     print('Server Version:', server['version'], file=sys.stdout)
 
     # Get download info
@@ -372,21 +357,36 @@ def main():
     if has_newer_version(server, download):
         print('New version available:', download['version'], file=sys.stdout)
 
-        if not args.check_only:
-            success = install_update(download, config, args)
+        # Bail here if we're not downloading or installing
+        if args.check_only:
+            return
 
-            if success and not args.skip_install:
-                msg = 'Plex has been updated to version {0}'.format(
-                    download['version'])
-            elif success and args.skip_install:
-                msg = 'New Plex version {0} has been downloaded'.format(
-                    download['version'])
-            else:
-                msg = 'There was an problem downloading the new Plex version.'
+        # Download the new Plex package
+        (download_success, package) = download_update(download, config)
 
-            send_notification(msg, not success)
-            print(msg, file=sys.stdout)
+        # Bail here if we had problems with the download
+        if not download_success:
+            sys.exit('There was an problem downloading the new Plex version.')
+
+        # Bail here if we're only downloading
+        if args.skip_install:
+            print('The new Plex version has been downloaded:\n',
+                  package, file=sys.stdout)
+            return
+
+        # Install the new Plex package
+        install_success = install_update(package, config)
+
+        # Return an error if there was a problem with the installation
+        if not install_success:
+            sys.exit('There was an problem installing the new Plex version.')
+
+        # Return success
+        print('Plex has been successfully updated to version',
+              download['version'], file=sys.stdout)
+
     else:
+        # Otherwise, we have the latest version
         print('Plex is up-to-date!', file=sys.stdout)
 
 
