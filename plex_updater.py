@@ -37,7 +37,7 @@ DPKG_EXECUTABLE = '/usr/bin/dpkg'
 RPM_EXECUTABLE = '/bin/rpm'
 VALID_SYSTEMS = ['Ubuntu', 'Fedora', 'CentOS']
 CONFIG_FILE = os.path.join(
-    os.path.expanduser('~'), '.config', 'plex', 'config.yml')
+    os.path.expanduser('~'), '.config', 'plex-updater', 'config.yml')
 
 
 def get_args():
