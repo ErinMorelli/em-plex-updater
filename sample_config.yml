@@ -1,6 +1,6 @@
 # EM Plex Updater Configuration
 # Change the settings below to reflect your PMS instance
-# Rename & place this file in ~/.config/plex/config.yml
+# Rename & place this file in ~/.config/plex-updater/config.yml
 
 # Your Plex Media Server's unique client ID
 # 1 - Log in to app.plex.tv/web/app
