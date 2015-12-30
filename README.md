@@ -11,7 +11,7 @@ A simple script for downloading and installing Plex Media Server updates for Lin
     
         ~/.config/plex-updater/config.yml
      
-     _**Note:** You will need to create the `plex-updater` (and potentially the `.config`) folder ahead of time. `mkdir ~/.config/plex-updater`_
+     _**Note:** You will need to create the `plex-updater` (and potentially the `.config`) folder ahead of time. `mkdir -p ~/.config/plex-updater`_
 
  4. From within the `em-plex-updater` folder, run:
     
@@ -31,6 +31,6 @@ This will run the updater script automatically every Sunday and Wednesday at 3:0
 
 If you want to log the output of the script to a file, try using this format:
 
-    0 3 * * 0,3 root /path/to/em-plex-updater/plex_updater.py >> /path/to/logfile.log
+    0 3 * * 0,3 root /path/to/em-plex-updater/plex_updater.py >> /path/to/logfile.log 2>&1
 
 _**Note:** Make sure the user running the script running has permission to install packages via RPM/DPKG_
