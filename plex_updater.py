@@ -310,12 +310,16 @@ def install_update(package, config):
         # Install on Ubuntu with dpkg
         if config['linux_system'] == 'Ubuntu':
             subprocess.check_output(
-                [DPKG_EXECUTABLE, '-i', package], shell=True)
+                '{0} -i {1}'.format(DPKG_EXECUTABLE, package),
+                shell=True
+            )
 
         # Install on Fedora or CentOS with rpm
         else:
             subprocess.check_output(
-                [RPM_EXECUTABLE, '-Uhv', package], shell=True)
+                '{0} -Uhv {1}'.format(RPM_EXECUTABLE, package),
+                shell=True
+            )
 
     # Check for a failed install
     except subprocess.CalledProcessError:
