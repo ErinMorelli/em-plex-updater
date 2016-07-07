@@ -22,13 +22,26 @@ password: OhNJ45BzDUhPqZ
 # Options: on, off
 plex_pass: off
 
-# Specify which Linux distribution packages to download
-# Available options: Ubuntu, Fedora, CentOS
-linux_system: Ubuntu
+# Specify which system you are using Plex on
+# Available options: Computer, NAS
+system_type: Computer
 
-# Specify which Linux kernel packages to download (in Bits)
-# Available options: 32, 64
-linux_version: 32
+# Specify which operating system you are using
+# Computer options: Windows, Mac, Linux, FreeBSD
+# NAS options: Synology, Netgear, QNAP, unRAID, Drobo, ASUSTOR, Thecus, Seagate, Western Digital
+system_os: Linux
+
+# (Optional) Specify which build of OS you would like to download
+# This is required for Linux and most NAS systems
+# Linux options: Ubuntu 64-bit, Ubuntu 32-bit, Fedora 64-bit, Fedora 32-bit, CentOS 64-bit, CentOS 32-bit
+# Synology: Intel, ARMv7
+# Netgear: Intel 6.x, ARM 6.x, ARM 6.x RN2xx
+# QNAP: Intel, ARMv7
+# ASUSTOR: Intel 64-bit, Intel 32-bit, ARMv7
+# Thecus: Intel 64-bit, Intel 32-bit
+# Seagate: Intel, ARMv7
+# Western Digital: Mirror, Mirror Gen2, EX2, EX2100, EX4100, DL2100, DL4100
+system_build: Ubuntu 32-bit
 
 # Specify where EM Plex Updater should save downloaded package files
 folder: /home/username/downloads

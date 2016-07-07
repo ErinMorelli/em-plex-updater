@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # Plex Updater
-# Copyright (c) 2015 Erin Morelli
+# Copyright (c) 2015-2016 Erin Morelli
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -27,15 +27,13 @@ import urllib
 import argparse
 import requests
 import subprocess
-from lxml import html
 import xml.etree.ElementTree as ET
 
 
 # Script global constants
 API_ROOT_URL = 'https://plex.tv/{0}'
 DPKG_EXECUTABLE = '/usr/bin/dpkg'
-RPM_EXECUTABLE = '/bin/rpm'
-VALID_SYSTEMS = ['Ubuntu', 'Fedora', 'CentOS']
+RPM_EXECUTABLE = '/usr/bin/rpm'
 CONFIG_FILE = os.path.join(
     os.path.expanduser('~'), '.config', 'plex-updater', 'config.yml')
 
@@ -81,13 +79,12 @@ def get_config():
     config = yaml.load(config_raw)
 
     # Check for valid systme value
-    if config['linux_system'] not in VALID_SYSTEMS:
-        msg = "Value for 'linux_system' must be one of: {0}"
-        sys.exit(msg.format(', '.join(VALID_SYSTEMS)))
+    if 'system_type' not in config.keys():
+        sys.exit("Config value for 'system_type' must be defined")
 
     # Check for valid version value
-    if config['linux_version'] not in [32, 64]:
-        sys.exit("Value for 'linux_version' must be one of: 32, 64")
+    if 'system_os' not in config.keys():
+        sys.exit("Config value for 'system_os' must be defined")
 
     # Check for valid download folder
     if not os.path.exists(config['folder']):
@@ -103,7 +100,7 @@ def get_token(config):
     '''
 
     # Set up API sign in URI
-    sign_in_url = API_ROOT_URL.format('users/sign_in.xml')
+    sign_in_url = API_ROOT_URL.format('users/sign_in.json')
 
     # Make API post request to get token
     sign_in_resp = requests.post(
@@ -115,8 +112,8 @@ def get_token(config):
         auth=(config['username'], config['password'])
     )
 
-    # Get XML reponse
-    sign_in_xml = ET.fromstring(sign_in_resp.content)
+    # Get JSON response
+    sign_in_user = sign_in_resp.json()['user']
 
     def disable_plex_pass(config):
         ''' Disables use of the Plex Pass download feed
@@ -133,22 +130,22 @@ def get_token(config):
 
     # Check that user has Plex Pass access if they've enabled it
     if config['plex_pass']:
-        subscription = sign_in_xml.find('subscription')
+        subscription = sign_in_user['subscription']
 
         # If the user has no subscription at all, disable
         if subscription is None:
             disable_plex_pass(config)
 
         # If the user's subscription is not active, disable
-        elif subscription.get('active') == '0':
+        elif not subscription['active']:
             disable_plex_pass(config)
 
         # If the user's subscription does not include 'pass', disable
-        elif subscription.find('feature[@id="pass"]') is None:
+        elif 'pass' not in subscription['features']:
             disable_plex_pass(config)
 
     # Return token from XML response
-    return sign_in_xml.get('authenticationToken')
+    return sign_in_user['authentication_token']
 
 
 def get_server_info(token, args):
@@ -190,7 +187,7 @@ def get_download_info(token, config):
     '''
 
     # Set up API downloads URI
-    downloads_url = API_ROOT_URL.format('downloads')
+    downloads_url = API_ROOT_URL.format('api/downloads/1.json')
 
     # Set up download params
     download_params = {}
@@ -208,45 +205,71 @@ def get_download_info(token, config):
         }
     )
 
-    # Decode returned HTML page content
-    downloads_xml = html.fromstring(
-        downloads_resp.content).xpath('//ul[@class="os"]/li')
+    # Get JSON content of API return
+    downloads = downloads_resp.json()
 
-    # Set up Linux system search string
-    system_search = 'span[@class="linux {0}"]'.format(
-        config['linux_system'].lower())
+    # Retrieve system type from config
+    system_type = config['system_type'].lower()
 
-    # Set up Linux version search string
-    version_search = 'div/a[@data-event-label="{0}{1}"]'.format(
-        config['linux_system'], config['linux_version'])
+    # Make sure system type is valid
+    if system_type not in downloads.keys():
+        msg = "Value for 'system_type' not valid, must be one of: {0}"
+        sys.exit(msg.format(', '.join(downloads.keys())))
 
-    # Iterate over HTML content to extract needed info
-    for download in downloads_xml:
-        # We only care about the Ubuntu Linux version
-        if download.find(system_search) is not None:
+    # Get system information
+    systems = downloads[system_type]
 
-            # Extract info from this section
-            download_info = download.find('p[@class="sm"]').text_content()
-            download_info_search = re.search(
-                r'version (.*)\n\s+(.*)\n', download_info, re.I | re.M)
+    # Get system os from config
+    system_os = config['system_os']
 
-            # Set up version info from RegEx
-            download_version = download_info_search.group(1)
+    # Find matching system OS
+    download_os = None
+    for available_os in systems.keys():
+        if re.match(system_os, available_os, re.I):
+            download_os = systems[available_os]
+            break
 
-            # Set up last updated info from Regex and convert to UNIX time
-            download_updated_raw = download_info_search.group(2)
-            download_updated = time.mktime(
-                time.strptime(download_updated_raw, "%b %d, %Y"))
+    # Make sure system OS is valid
+    if download_os is None:
+        msg = "Value for 'system_os' is not valid, "
+        msg += "must regex match one of: {0}"
+        sys.exit(msg.format(', '.join(systems.keys())))
 
-            # Extract file download link from content
-            download_link = download.find(version_search).get('href')
+    # Check for a system build
+    if 'system_build' in config.keys():
+        # Get system build from config
+        system_build = config['system_build']
 
-            # Return available Plex download info
-            return {
-                'updated': download_updated,
-                'version': download_version,
-                'link': download_link
-            }
+        # Find a release that matches the build
+        download_release = None
+        for release in download_os['releases']:
+            if re.match(system_build, release['label'], re.I):
+                download_release = release
+                break
+
+        # Make sure release is valid
+        if download_release is None:
+            msg = "Value for 'system_build' is not valid, "
+            msg += "must regex match one of:\n{0}"
+            sys.exit(msg.format("\n".join([
+                " + {0}".format(r['label']) for r in download_os['releases']
+            ])))
+    else:
+        # Get our first returned release
+        download_release = download_os['releases'][0]
+
+        # Inform user of release being used
+        msg = "Using first available {0} build: {1}"
+        print(
+            msg.format(download_os['name'], download_release['label']),
+            file=sys.stdout
+        )
+
+    return {
+        'updated': download_os['release_date'],
+        'version': download_os['version'],
+        'link': download_release['url']
+    }
 
 
 def has_newer_version(server, download):
@@ -287,7 +310,10 @@ def download_update(download, config):
     '''
 
     # Set up download name and target path
-    download_name = 'pms_{0}.deb'.format(download['version'])
+    download_name = 'pms_{0}{1}'.format(
+        download['version'],
+        os.path.splitext(download['link'])[1]
+    )
     download_target = os.path.join(config['folder'], download_name)
 
     # If we've already downloaded this file, remove it
@@ -306,16 +332,29 @@ def install_update(package, config):
     ''' Installs the new Plex package
     '''
 
+    # Check for Linux
+    if config['system_os'].lower() != 'linux':
+        sys.exit('Sorry, installation is currently only available on Linux')
+
+    # Get the package file extension
+    package_ext = os.path.splitext(package)[1]
+
     try:
         # Install on Ubuntu with dpkg
-        if config['linux_system'] == 'Ubuntu':
+        if (
+            re.match(r'deb$', package_ext, re.I) and
+            os.path.exists(DPKG_EXECUTABLE)
+        ):
             subprocess.check_output(
                 '{0} -i {1}'.format(DPKG_EXECUTABLE, package),
                 shell=True
             )
 
         # Install on Fedora or CentOS with rpm
-        else:
+        elif (
+            re.match(r'rpm$', package_ext, re.I) and
+            os.path.exists(RPM_EXECUTABLE)
+        ):
             subprocess.check_output(
                 '{0} -Uhv {1}'.format(RPM_EXECUTABLE, package),
                 shell=True
@@ -332,6 +371,9 @@ def install_update(package, config):
 
         # Return successful
         return True
+
+    # Fall back to false
+    return False
 
 
 def main():
