@@ -3,6 +3,8 @@ A simple script for downloading and installing Plex Media Server updates for Lin
 
 ## Basic Setup
 
+Before starting, ensure you have the `python-yaml` and `python-lxml` packages installed on your system.
+
  1. Open the `sample_config.yml` file in your favorite text editor. 
      
  2. Read through each of the options and update/change them as needed.
