@@ -342,35 +342,29 @@ def install_update(package, config):
     try:
         # Install on Ubuntu with dpkg
         if (
-            re.match(r'deb$', package_ext, re.I) and
+            re.match(r'\.deb$', package_ext, re.I) and
             os.path.exists(DPKG_EXECUTABLE)
         ):
             subprocess.check_output(
                 '{0} -i {1}'.format(DPKG_EXECUTABLE, package),
                 shell=True
             )
+            return True
 
         # Install on Fedora or CentOS with rpm
         elif (
-            re.match(r'rpm$', package_ext, re.I) and
+            re.match(r'\.rpm$', package_ext, re.I) and
             os.path.exists(RPM_EXECUTABLE)
         ):
             subprocess.check_output(
                 '{0} -Uhv {1}'.format(RPM_EXECUTABLE, package),
                 shell=True
             )
+            return True
 
     # Check for a failed install
     except subprocess.CalledProcessError:
         return False
-
-    else:
-        # Remove the downloaded file, if enabled
-        if config['remove_completed']:
-            os.remove(package)
-
-        # Return successful
-        return True
 
     # Fall back to false
     return False
@@ -421,11 +415,26 @@ def main():
             return
 
         # Install the new Plex package
-        install_success = install_update(package, config)
+        install_completed = install_update(package, config)
 
         # Return an error if there was a problem with the installation
-        if not install_success:
-            sys.exit('There was an problem installing the new Plex version.')
+        if not install_completed:
+            msg = 'There was an problem installing the new Plex version.\n'
+            msg += 'Try installing the package manually: {0}'
+            sys.exit(msg.format(package))
+
+        # Check that install was actually successful
+        new_server_info = get_server_info(token, args)
+
+        # Verify new version
+        if new_server_info['version'] != download['version']:
+            msg = 'There was an problem installing the new Plex version.\n'
+            msg += 'Try installing the package manually: {0}'
+            sys.exit(msg.format(package))
+
+        # Otherwise, remove the packoge if we need tp
+        if config['remove_completed']:
+            os.remove(package)
 
         # Return success
         print('Plex has been successfully updated to version',
