@@ -148,7 +148,7 @@ def get_token(config):
     return sign_in_user['authentication_token']
 
 
-def get_server_info(token, args):
+def get_server_info(token, args, clientid):
     ''' Get current server version
     '''
 
@@ -164,7 +164,16 @@ def get_server_info(token, args):
     )
 
     # Decode returned XML data
-    server_xml = ET.fromstring(server_resp.content)[0]
+    server_xml = None
+    resp_xml = ET.fromstring(server_resp.content)
+    for i in xrange(int(dict(resp_xml.items())['size'])):
+        server = dict(resp_xml[i].items())
+        if 'machineIdentifier' in server and server['machineIdentifier'] == clientid:
+            server_xml = ET.fromstring(server_resp.content)[i]
+
+    if server_xml == None:
+        print("Server not found!")
+        exit(1)
 
     # Make sure user is server owner
     if server_xml.get('owned') == '0':
@@ -387,7 +396,7 @@ def main():
     token = get_token(config)
 
     # Get server info
-    server = get_server_info(token, args)
+    server = get_server_info(token, args, config['client'])
     print('Server Version:', server['version'], file=sys.stdout)
 
     # Get download info
