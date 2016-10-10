@@ -29,10 +29,6 @@ import requests
 import subprocess
 import xml.etree.ElementTree as ET
 
-import pprint
-pp = pprint.PrettyPrinter(indent=4)
-
-
 
 # Script global constants
 API_ROOT_URL = 'https://plex.tv/{0}'
