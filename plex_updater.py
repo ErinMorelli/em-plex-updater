@@ -29,6 +29,10 @@ import requests
 import subprocess
 import xml.etree.ElementTree as ET
 
+import pprint
+pp = pprint.PrettyPrinter(indent=4)
+
+
 
 # Script global constants
 API_ROOT_URL = 'https://plex.tv/{0}'
@@ -148,7 +152,7 @@ def get_token(config):
     return sign_in_user['authentication_token']
 
 
-def get_server_info(token, args):
+def get_server_info(token, args, config):
     ''' Get current server version
     '''
 
@@ -163,8 +167,20 @@ def get_server_info(token, args):
         }
     )
 
-    # Decode returned XML data
-    server_xml = ET.fromstring(server_resp.content)[0]
+    # Get list of Plex servers from XML
+    server_xml = None
+    server_resp_xml = ET.fromstring(server_resp.content)
+
+    # Find the server we want to update
+    for server in server_resp_xml:
+        if server.get('machineIdentifier') == config['client']:
+            server_xml = server
+            break
+
+    # Bail if we didn't find the Plex server we want
+    if server_xml is None:
+        msg = 'Could not find a Plex Media Server with client ID: {0}'
+        sys.exit(msg.format(config['client']))
 
     # Make sure user is server owner
     if server_xml.get('owned') == '0':
@@ -387,7 +403,7 @@ def main():
     token = get_token(config)
 
     # Get server info
-    server = get_server_info(token, args)
+    server = get_server_info(token, args, config)
     print('Server Version:', server['version'], file=sys.stdout)
 
     # Get download info
@@ -424,7 +440,7 @@ def main():
             sys.exit(msg.format(package))
 
         # Check that install was actually successful
-        new_server_info = get_server_info(token, args)
+        new_server_info = get_server_info(token, args, config)
 
         # Verify new version
         if new_server_info['version'] != download['version']:
