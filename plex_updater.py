@@ -113,7 +113,14 @@ def get_token(config):
     )
 
     # Get JSON response
-    sign_in_user = sign_in_resp.json()['user']
+    sign_in_json = sign_in_resp.json()
+
+    # Check for error
+    if 'error' in sign_in_json.keys():
+        sys.exit(sign_in_json['error'])
+
+    # Get JSON response
+    sign_in_user = sign_in_json['user']
 
     def disable_plex_pass(config):
         ''' Disables use of the Plex Pass download feed
@@ -148,7 +155,7 @@ def get_token(config):
     return sign_in_user['authentication_token']
 
 
-def get_server_info(token, args):
+def get_server_info(token, args, config):
     ''' Get current server version
     '''
 
@@ -163,8 +170,20 @@ def get_server_info(token, args):
         }
     )
 
-    # Decode returned XML data
-    server_xml = ET.fromstring(server_resp.content)[0]
+    # Get list of Plex servers from XML
+    server_xml = None
+    server_resp_xml = ET.fromstring(server_resp.content)
+
+    # Find the server we want to update
+    for server in server_resp_xml:
+        if server.get('machineIdentifier') == config['client']:
+            server_xml = server
+            break
+
+    # Bail if we didn't find the Plex server we want
+    if server_xml is None:
+        msg = 'Could not find a Plex Media Server with client ID: {0}'
+        sys.exit(msg.format(config['client']))
 
     # Make sure user is server owner
     if server_xml.get('owned') == '0':
@@ -207,6 +226,10 @@ def get_download_info(token, config):
 
     # Get JSON content of API return
     downloads = downloads_resp.json()
+
+    # Check for errors
+    if 'error' in downloads.keys():
+        sys.exit(downloads['error'])
 
     # Retrieve system type from config
     system_type = config['system_type'].lower()
@@ -387,7 +410,7 @@ def main():
     token = get_token(config)
 
     # Get server info
-    server = get_server_info(token, args)
+    server = get_server_info(token, args, config)
     print('Server Version:', server['version'], file=sys.stdout)
 
     # Get download info
@@ -424,7 +447,7 @@ def main():
             sys.exit(msg.format(package))
 
         # Check that install was actually successful
-        new_server_info = get_server_info(token, args)
+        new_server_info = get_server_info(token, args, config)
 
         # Verify new version
         if new_server_info['version'] != download['version']:
