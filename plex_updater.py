@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # Plex Updater
-# Copyright (c) 2015-2016 Erin Morelli
+# Copyright (c) 2015-2017 Erin Morelli
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -38,6 +38,30 @@ CONFIG_FILE = os.path.join(
     os.path.expanduser('~'), '.config', 'plex-updater', 'config.yml')
 
 
+class FileAction(argparse.Action):
+    '''Custom files validation action for argparse.
+    A child object of argparse.Action().
+    '''
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        '''Checks that file provided exists.
+        '''
+
+        # Retrieve full absolute file path
+        file_path = os.path.abspath(values)
+
+        # Check that the path exists
+        if not os.path.exists(file_path):
+            error = "File provided for {0} {1} {2}".format(
+                self.dest, 'does not exist:', values)
+            parser.error(error)
+
+        # Set value in namespace object
+        setattr(namespace, self.dest, values)
+
+        return
+
+
 def get_args():
     ''' Parse CLI arguments
     '''
@@ -51,6 +75,15 @@ def get_args():
     )
 
     # Add args to parser
+    parser.add_argument(
+        '-f', '--config',
+        default=CONFIG_FILE,
+        help="{0}. Default: {1}".format(
+            'Specify a configuration file the script to use',
+            CONFIG_FILE
+        ),
+        action=FileAction
+    )
     parser.add_argument(
         '-s', '--skip_install',
         default=False,
@@ -68,12 +101,12 @@ def get_args():
     return parser.parse_args()
 
 
-def get_config():
+def get_config(args):
     ''' Get extra info from config file
     '''
 
     # Read yaml config file
-    config_raw = open(CONFIG_FILE).read()
+    config_raw = open(args.config).read()
 
     # Decode yaml
     config = yaml.load(config_raw)
@@ -155,7 +188,7 @@ def get_token(config):
     return sign_in_user['authentication_token']
 
 
-def get_server_info(token, args, config):
+def get_server_info(config, args, token):
     ''' Get current server version
     '''
 
@@ -201,7 +234,7 @@ def get_server_info(token, args, config):
     }
 
 
-def get_download_info(token, config):
+def get_download_info(config, token):
     ''' Get current Plex version
     '''
 
@@ -328,7 +361,7 @@ def has_newer_version(server, download):
     return compare_versions(s_version, d_version)
 
 
-def download_update(download, config):
+def download_update(config, download):
     ''' Download and new Plex package
     '''
 
@@ -351,7 +384,7 @@ def download_update(download, config):
     return os.path.exists(download_path[0]), download_path[0]
 
 
-def install_update(package, config):
+def install_update(config, package):
     ''' Installs the new Plex package
     '''
 
@@ -401,7 +434,7 @@ def main():
     args = get_args()
 
     # Get config file info
-    config = get_config()
+    config = get_config(args)
 
     # Start program
     print('Checking for updates @', time.ctime(), file=sys.stdout)
@@ -410,11 +443,11 @@ def main():
     token = get_token(config)
 
     # Get server info
-    server = get_server_info(token, args, config)
+    server = get_server_info(config, args, token)
     print('Server Version:', server['version'], file=sys.stdout)
 
     # Get download info
-    download = get_download_info(token, config)
+    download = get_download_info(config, token)
 
     # Check for new version
     if has_newer_version(server, download):
@@ -425,7 +458,7 @@ def main():
             return
 
         # Download the new Plex package
-        (download_success, package) = download_update(download, config)
+        (download_success, package) = download_update(config, download)
 
         # Bail here if we had problems with the download
         if not download_success:
@@ -438,7 +471,7 @@ def main():
             return
 
         # Install the new Plex package
-        install_completed = install_update(package, config)
+        install_completed = install_update(config, package)
 
         # Return an error if there was a problem with the installation
         if not install_completed:
@@ -446,8 +479,12 @@ def main():
             msg += 'Try installing the package manually: {0}'
             sys.exit(msg.format(package))
 
+        # Sleep 30 seconds before checking server
+        print('Pause for 30 seconds while server updates...', file=sys.stdout)
+        time.sleep(30)
+
         # Check that install was actually successful
-        new_server_info = get_server_info(token, args, config)
+        new_server_info = get_server_info(config, args, token)
 
         # Verify new version
         if new_server_info['version'] != download['version']:
