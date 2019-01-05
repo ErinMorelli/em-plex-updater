@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # Plex Updater
-# Copyright (c) 2015-2017 Erin Morelli
+# Copyright (c) 2015-2019, Erin Morelli
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -13,8 +13,8 @@
 #
 # The above copyright notice and this permission notice shall be
 # included in all copies or substantial portions of the Software.
-''' A python-based updater for Plex Media Server
-'''
+""" A python-based updater for Plex Media Server
+"""
 
 from __future__ import print_function
 
@@ -39,13 +39,13 @@ CONFIG_FILE = os.path.join(
 
 
 class FileAction(argparse.Action):
-    '''Custom files validation action for argparse.
+    """Custom files validation action for argparse.
     A child object of argparse.Action().
-    '''
+    """
 
     def __call__(self, parser, namespace, values, option_string=None):
-        '''Checks that file provided exists.
-        '''
+        """Checks that file provided exists.
+        """
 
         # Retrieve full absolute file path
         file_path = os.path.abspath(values)
@@ -63,8 +63,8 @@ class FileAction(argparse.Action):
 
 
 def get_args():
-    ''' Parse CLI arguments
-    '''
+    """ Parse CLI arguments
+    """
 
     # Set up arg parser
     parser = argparse.ArgumentParser(
@@ -102,8 +102,8 @@ def get_args():
 
 
 def get_config(args):
-    ''' Get extra info from config file
-    '''
+    """ Get extra info from config file
+    """
 
     # Read yaml config file
     config_raw = open(args.config).read()
@@ -129,8 +129,8 @@ def get_config(args):
 
 
 def get_token(config):
-    ''' Sign in and get token from Plex
-    '''
+    """ Sign in and get token from Plex
+    """
 
     # Set up API sign in URI
     sign_in_url = API_ROOT_URL.format('users/sign_in.json')
@@ -156,9 +156,9 @@ def get_token(config):
     sign_in_user = sign_in_json['user']
 
     def disable_plex_pass(config):
-        ''' Disables use of the Plex Pass download feed
+        """ Disables use of the Plex Pass download feed
             and notifies the user.
-        '''
+        """
 
         # Update config object to disable Plex Pass features
         config['plex_pass'] = False
@@ -189,8 +189,8 @@ def get_token(config):
 
 
 def get_server_info(config, args, token):
-    ''' Get current server version
-    '''
+    """ Get current server version
+    """
 
     # Set up API server info URI
     server_url = API_ROOT_URL.format('pms/servers.xml')
@@ -235,8 +235,8 @@ def get_server_info(config, args, token):
 
 
 def get_download_info(config, token):
-    ''' Get current Plex version
-    '''
+    """ Get current Plex version
+    """
 
     # Set up API downloads URI
     downloads_url = API_ROOT_URL.format('api/downloads/1.json')
@@ -329,16 +329,16 @@ def get_download_info(config, token):
 
 
 def has_newer_version(server, download):
-    ''' Check if Plex's version is newer than server version
-    '''
+    """ Check if Plex's version is newer than server version
+    """
 
     # Split version numbers into pieces for comparison
     s_version = server['version'].split('.')
     d_version = download['version'].split('.')
 
     def compare_versions(server, download):
-        ''' Iteratively compare server and download version ints
-        '''
+        """ Iteratively compare server and download version ints
+        """
 
         try:
             s_int = server.pop(0)
@@ -362,8 +362,8 @@ def has_newer_version(server, download):
 
 
 def download_update(config, download):
-    ''' Download and new Plex package
-    '''
+    """ Download and new Plex package
+    """
 
     # Set up download name and target path
     download_name = 'pms_{0}{1}'.format(
@@ -385,8 +385,8 @@ def download_update(config, download):
 
 
 def install_update(config, package):
-    ''' Installs the new Plex package
-    '''
+    """ Installs the new Plex package
+    """
 
     # Check for Linux
     if config['system_os'].lower() != 'linux':
@@ -427,8 +427,8 @@ def install_update(config, package):
 
 
 def main():
-    ''' Main wrapper function to run script
-    '''
+    """ Main wrapper function to run script
+    """
 
     # Get CLI args
     args = get_args()
