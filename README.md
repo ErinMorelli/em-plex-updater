@@ -1,6 +1,10 @@
 # EM Plex Updater
 A simple script for downloading and installing Plex Media Server updates for Linux.
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=ErinMorelli_em-plex-updater&metric=alert_status)](https://sonarcloud.io/dashboard?id=ErinMorelli_em-plex-updater)
+
+---
+
 ## Basic Setup
 
 Before starting, ensure you have the `python-yaml` and `python-lxml` packages installed on your system.
