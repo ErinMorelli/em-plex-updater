@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-
-# Plex Updater
 # Copyright (c) 2015-2021, Erin Morelli
 #
 # Permission is hereby granted, free of charge, to any person obtaining
@@ -13,60 +11,44 @@
 #
 # The above copyright notice and this permission notice shall be
 # included in all copies or substantial portions of the Software.
-""" A python-based updater for Plex Media Server
-"""
-
-from __future__ import print_function
 
 import re
 import os
 import sys
 import time
-import yaml
-import urllib
 import argparse
-import requests
 import subprocess
-import xml.etree.ElementTree as ET
+from xml.etree import ElementTree
+from urllib.request import URLopener
 
+import yaml
+import requests
 
 # Script global constants
-API_ROOT_URL = 'https://plex.tv/{0}'
+API_ROOT_URL = 'https://plex.tv/'
 DPKG_EXECUTABLE = '/usr/bin/dpkg'
 RPM_EXECUTABLE = '/usr/bin/rpm'
-CONFIG_FILE = os.path.join(
-    os.path.expanduser('~'), '.config', 'plex-updater', 'config.yml')
+CONFIG_FILE = os.path.join(os.path.expanduser('~'), '.config', 'plex-updater', 'config.yml')
 
 
 class FileAction(argparse.Action):
-    """Custom files validation action for argparse.
-    A child object of argparse.Action().
-    """
+    """Custom files validation action for argparse."""
 
     def __call__(self, parser, namespace, values, option_string=None):
-        """Checks that file provided exists.
-        """
-
-        # Retrieve full absolute file path
+        """Checks that file provided exists."""
         file_path = os.path.abspath(values)
 
         # Check that the path exists
         if not os.path.exists(file_path):
-            error = "File provided for {0} {1} {2}".format(
-                self.dest, 'does not exist:', values)
+            error = f"File provided for {self.dest} does not exist: {values}"
             parser.error(error)
 
         # Set value in namespace object
         setattr(namespace, self.dest, values)
 
-        return
-
 
 def get_args():
-    """ Parse CLI arguments
-    """
-
-    # Set up arg parser
+    """Parse CLI arguments."""
     parser = argparse.ArgumentParser(
         description=(
             "Checks to see if there's a new Plex Media Server version," +
@@ -78,10 +60,7 @@ def get_args():
     parser.add_argument(
         '-f', '--config',
         default=CONFIG_FILE,
-        help="{0}. Default: {1}".format(
-            'Specify a configuration file the script to use',
-            CONFIG_FILE
-        ),
+        help=f"Specify a configuration file the script to use. Default: {CONFIG_FILE}",
         action=FileAction
     )
     parser.add_argument(
@@ -102,16 +81,10 @@ def get_args():
 
 
 def get_config(args):
-    """ Get extra info from config file
-    """
+    """Get extra info from config file."""
+    config = yaml.load(open(args.config).read())
 
-    # Read yaml config file
-    config_raw = open(args.config).read()
-
-    # Decode yaml
-    config = yaml.load(config_raw)
-
-    # Check for valid systme value
+    # Check for valid system value
     if 'system_type' not in config.keys():
         sys.exit("Config value for 'system_type' must be defined")
 
@@ -121,27 +94,21 @@ def get_config(args):
 
     # Check for valid download folder
     if not os.path.exists(config['folder']):
-        msg = "Path to 'folder' does not exist: {0}"
-        sys.exit(msg.format(config['folder']))
+        sys.exit(f"Path to 'folder' does not exist: {config['folder']}")
 
     # Return config info
     return config
 
 
 def get_token(config):
-    """ Sign in and get token from Plex
-    """
-
-    # Set up API sign in URI
-    sign_in_url = API_ROOT_URL.format('users/sign_in.json')
+    """Sign in and get token from Plex."""
+    sign_in_url = API_ROOT_URL + 'users/sign_in.json'
 
     # Make API post request to get token
     sign_in_resp = requests.post(
         sign_in_url,
         data={},
-        headers={
-            'X-Plex-Client-Identifier': config['client']
-        },
+        headers={'X-Plex-Client-Identifier': config['client']},
         auth=(config['username'], config['password'])
     )
 
@@ -155,57 +122,39 @@ def get_token(config):
     # Get JSON response
     sign_in_user = sign_in_json['user']
 
-    def disable_plex_pass(config):
-        """ Disables use of the Plex Pass download feed
-            and notifies the user.
-        """
-
-        # Update config object to disable Plex Pass features
-        config['plex_pass'] = False
-
-        # Notify the user via CLI of the change
-        print('WARNING: The account provided does not have a ' +
-              'valid Plex Pass subscription!\n\t Switching to use the ' +
-              'Public downloads feed for updates.', file=sys.stderr)
-
     # Check that user has Plex Pass access if they've enabled it
     if config['plex_pass']:
         subscription = sign_in_user['subscription']
 
-        # If the user has no subscription at all, disable
-        if subscription is None:
-            disable_plex_pass(config)
+        # See if plex pass needs to be disabled
+        if subscription is None or \
+                not subscription['active'] or \
+                'pass' not in subscription['features']:
+            # Disables use of the Plex Pass download feed
+            config['plex_pass'] = False
 
-        # If the user's subscription is not active, disable
-        elif not subscription['active']:
-            disable_plex_pass(config)
-
-        # If the user's subscription does not include 'pass', disable
-        elif 'pass' not in subscription['features']:
-            disable_plex_pass(config)
+            # Notify the user via CLI of the change
+            print('WARNING: The account provided does not have a ' +
+                  'valid Plex Pass subscription!\n\t Switching to use the ' +
+                  'Public downloads feed for updates.', file=sys.stderr)
 
     # Return token from XML response
     return sign_in_user['authentication_token']
 
 
 def get_server_info(config, args, token):
-    """ Get current server version
-    """
-
-    # Set up API server info URI
-    server_url = API_ROOT_URL.format('pms/servers.xml')
+    """Get current server version."""
+    server_url = API_ROOT_URL + 'pms/servers.xml'
 
     # Make API get request for server info
     server_resp = requests.get(
         server_url,
-        headers={
-            'X-Plex-Token': token
-        }
+        headers={'X-Plex-Token': token}
     )
 
     # Get list of Plex servers from XML
     server_xml = None
-    server_resp_xml = ET.fromstring(server_resp.content)
+    server_resp_xml = ElementTree.fromstring(server_resp.content)
 
     # Find the server we want to update
     for server in server_resp_xml:
@@ -234,12 +183,29 @@ def get_server_info(config, args, token):
     }
 
 
-def get_download_info(config, token):
-    """ Get current Plex version
-    """
+def check_system_build(config, download_os):
+    """Check system build and return release data."""
+    if 'system_build' not in config.keys():
+        release = download_os['releases'][0]
+        print(f"Using first available {download_os['name']} build: {release['label']}")
+        return release
 
-    # Set up API downloads URI
-    downloads_url = API_ROOT_URL.format('api/downloads/1.json')
+    # Get system build from config
+    system_build = config['system_build']
+
+    # Find a release that matches the build
+    for release in download_os['releases']:
+        if re.match(system_build, release['label'], re.I):
+            return release
+
+    # Make sure release is valid
+    builds = "\n".join([f" + {r['label']}" for r in download_os['releases']])
+    sys.exit(f"Value for 'system_build' is not valid, must regex match one of:\n{builds}")
+
+
+def get_download_info(config, token):
+    """Get current Plex version."""
+    downloads_url = API_ROOT_URL + 'api/downloads/1.json'
 
     # Set up download params
     download_params = {}
@@ -252,9 +218,7 @@ def get_download_info(config, token):
     downloads_resp = requests.get(
         downloads_url,
         params=download_params,
-        headers={
-            'X-Plex-Token': token
-        }
+        headers={'X-Plex-Token': token}
     )
 
     # Get JSON content of API return
@@ -269,8 +233,8 @@ def get_download_info(config, token):
 
     # Make sure system type is valid
     if system_type not in downloads.keys():
-        msg = "Value for 'system_type' not valid, must be one of: {0}"
-        sys.exit(msg.format(', '.join(downloads.keys())))
+        types = ', '.join(downloads.keys())
+        sys.exit(f"Value for 'system_type' not valid, must be one of: {types}")
 
     # Get system information
     systems = downloads[system_type]
@@ -287,39 +251,11 @@ def get_download_info(config, token):
 
     # Make sure system OS is valid
     if download_os is None:
-        msg = "Value for 'system_os' is not valid, "
-        msg += "must regex match one of: {0}"
-        sys.exit(msg.format(', '.join(systems.keys())))
+        oses = ', '.join(systems.keys())
+        sys.exit(f"Value for 'system_os' is not valid, must regex match one of: {oses}")
 
-    # Check for a system build
-    if 'system_build' in config.keys():
-        # Get system build from config
-        system_build = config['system_build']
-
-        # Find a release that matches the build
-        download_release = None
-        for release in download_os['releases']:
-            if re.match(system_build, release['label'], re.I):
-                download_release = release
-                break
-
-        # Make sure release is valid
-        if download_release is None:
-            msg = "Value for 'system_build' is not valid, "
-            msg += "must regex match one of:\n{0}"
-            sys.exit(msg.format("\n".join([
-                " + {0}".format(r['label']) for r in download_os['releases']
-            ])))
-    else:
-        # Get our first returned release
-        download_release = download_os['releases'][0]
-
-        # Inform user of release being used
-        msg = "Using first available {0} build: {1}"
-        print(
-            msg.format(download_os['name'], download_release['label']),
-            file=sys.stdout
-        )
+    # Get download release info
+    download_release = check_system_build(config, download_os)
 
     return {
         'updated': download_os['release_date'],
@@ -329,27 +265,22 @@ def get_download_info(config, token):
 
 
 def has_newer_version(server, download):
-    """ Check if Plex's version is newer than server version
-    """
-
-    # Split version numbers into pieces for comparison
+    """Check if Plex's version is newer than server version."""
     s_version = server['version'].split('.')
     d_version = download['version'].split('.')
 
-    def compare_versions(server, download):
-        """ Iteratively compare server and download version ints
-        """
-
+    def compare_versions(server_, download_):
+        """Iteratively compare server and download version ints."""
         try:
-            s_int = server.pop(0)
-            d_int = download.pop(0)
+            s_int = server_.pop(0)
+            d_int = download_.pop(0)
         except IndexError:
             # If we've reached the end of our arrays, return
             return False
 
         # If the numbers are the same, keep going
         if d_int == s_int:
-            return compare_versions(server, download)
+            return compare_versions(server_, download_)
         # If the download's number is higher, it's a newer version
         if d_int > s_int:
             return True
@@ -362,14 +293,8 @@ def has_newer_version(server, download):
 
 
 def download_update(config, download):
-    """ Download and new Plex package
-    """
-
-    # Set up download name and target path
-    download_name = 'pms_{0}{1}'.format(
-        download['version'],
-        os.path.splitext(download['link'])[1]
-    )
+    """Download and new Plex package."""
+    download_name = f"pms_{download['version']}{os.path.splitext(download['link'])[1]}"
     download_target = os.path.join(config['folder'], download_name)
 
     # If we've already downloaded this file, remove it
@@ -377,18 +302,14 @@ def download_update(config, download):
         os.remove(download_target)
 
     # Download the file
-    downloader = urllib.URLopener()
-    download_path = downloader.retrieve(download['link'], download_target)
+    download_path = URLopener().retrieve(download['link'], download_target)
 
     # Make sure the file exists
     return os.path.exists(download_path[0]), download_path[0]
 
 
 def install_update(config, package):
-    """ Installs the new Plex package
-    """
-
-    # Check for Linux
+    """Installs the new Plex package."""
     if config['system_os'].lower() != 'linux':
         sys.exit('Sorry, installation is currently only available on Linux')
 
@@ -397,25 +318,13 @@ def install_update(config, package):
 
     try:
         # Install on Ubuntu with dpkg
-        if (
-            re.match(r'\.deb$', package_ext, re.I) and
-            os.path.exists(DPKG_EXECUTABLE)
-        ):
-            subprocess.check_output(
-                '{0} -i {1}'.format(DPKG_EXECUTABLE, package),
-                shell=True
-            )
+        if re.match(r'\.deb$', package_ext, re.I) and os.path.exists(DPKG_EXECUTABLE):
+            subprocess.check_output(f'{DPKG_EXECUTABLE} -i {package}', shell=True)
             return True
 
         # Install on Fedora or CentOS with rpm
-        elif (
-            re.match(r'\.rpm$', package_ext, re.I) and
-            os.path.exists(RPM_EXECUTABLE)
-        ):
-            subprocess.check_output(
-                '{0} -Uhv {1}'.format(RPM_EXECUTABLE, package),
-                shell=True
-            )
+        elif re.match(r'\.rpm$', package_ext, re.I) and os.path.exists(RPM_EXECUTABLE):
+            subprocess.check_output(f'{RPM_EXECUTABLE} -Uhv {package}', shell=True)
             return True
 
     # Check for a failed install
@@ -427,31 +336,28 @@ def install_update(config, package):
 
 
 def main():
-    """ Main wrapper function to run script
-    """
-
-    # Get CLI args
+    """Main wrapper function to run script."""
     args = get_args()
 
     # Get config file info
     config = get_config(args)
 
     # Start program
-    print('Checking for updates @', time.ctime(), file=sys.stdout)
+    print(f'Checking for updates @{time.ctime()}')
 
     # Get token
     token = get_token(config)
 
     # Get server info
     server = get_server_info(config, args, token)
-    print('Server Version:', server['version'], file=sys.stdout)
+    print(f"Server Version: {server['version']}")
 
     # Get download info
     download = get_download_info(config, token)
 
     # Check for new version
     if has_newer_version(server, download):
-        print('New version available:', download['version'], file=sys.stdout)
+        print(f"New version available: {download['version']}")
 
         # Bail here if we're not downloading or installing
         if args.check_only:
@@ -466,8 +372,7 @@ def main():
 
         # Bail here if we're only downloading
         if args.skip_install:
-            print('The new Plex version has been downloaded:\n',
-                  package, file=sys.stdout)
+            print(f'The new Plex version has been downloaded:\n{package}')
             return
 
         # Install the new Plex package
@@ -475,12 +380,12 @@ def main():
 
         # Return an error if there was a problem with the installation
         if not install_completed:
-            msg = 'There was an problem installing the new Plex version.\n'
-            msg += 'Try installing the package manually: {0}'
-            sys.exit(msg.format(package))
+            msg = f'There was an problem installing the new Plex version.\n' \
+                  f'Try installing the package manually: {package}'
+            sys.exit(msg)
 
         # Sleep 30 seconds before checking server
-        print('Pause for 30 seconds while server updates...', file=sys.stdout)
+        print('Pause for 30 seconds while server updates...')
         time.sleep(30)
 
         # Check that install was actually successful
@@ -488,21 +393,20 @@ def main():
 
         # Verify new version
         if new_server_info['version'] != download['version']:
-            msg = 'There was an problem installing the new Plex version.\n'
-            msg += 'Try installing the package manually: {0}'
-            sys.exit(msg.format(package))
+            msg = f'There was an problem installing the new Plex version.\n' \
+                  f'Try installing the package manually: {package}'
+            sys.exit(msg)
 
-        # Otherwise, remove the packoge if we need tp
+        # Otherwise, remove the package if we need tp
         if config['remove_completed']:
             os.remove(package)
 
         # Return success
-        print('Plex has been successfully updated to version',
-              download['version'], file=sys.stdout)
+        print(f"Plex has been successfully updated to version {download['version']}")
 
     else:
         # Otherwise, we have the latest version
-        print('Plex is up-to-date!', file=sys.stdout)
+        print('Plex is up-to-date!')
 
 
 if __name__ == '__main__':
